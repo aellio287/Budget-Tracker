@@ -1,0 +1,5 @@
+{
+  "name": "Budget Tracker",
+  "description": "A modern, responsive personal finance manager with local data persistence.",
+  "requestFramePermissions": []
+}
