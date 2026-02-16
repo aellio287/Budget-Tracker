@@ -31,11 +31,15 @@ export const AIInsights: React.FC<AIInsightsProps> = ({
   );
 
   const insights = useMemo(() => {
-    setIsUpdating(true);
-    const result = generateFinancialInsights(income, expenses, budgetLimit, categoryBreakdown, previousMonthData);
-    setTimeout(() => setIsUpdating(false), 500);
-    return result;
+    return generateFinancialInsights(income, expenses, budgetLimit, categoryBreakdown, previousMonthData);
   }, [income, expenses, budgetLimit, categoryBreakdown, previousMonthData]);
+
+  // Handle animation state cleanly when insights update
+  useEffect(() => {
+    setIsUpdating(true);
+    const timer = setTimeout(() => setIsUpdating(false), 400);
+    return () => clearTimeout(timer);
+  }, [insights]);
 
   const fetchAiTip = async () => {
     if (transactions.length === 0) return;
@@ -45,16 +49,19 @@ export const AIInsights: React.FC<AIInsightsProps> = ({
       setAiTip(tip);
     } catch (err) {
       console.error(err);
+      setAiTip("Check your connection to get the latest AI tips.");
     } finally {
       setLoading(false);
     }
   };
 
+  // Only fetch when the transaction count or first transaction changes
   useEffect(() => {
-    fetchAiTip();
-  }, [transactions.length > 0 && transactions[0].id]);
+    if (transactions.length > 0) {
+      fetchAiTip();
+    }
+  }, [transactions.length, transactions[0]?.id]);
 
-  // Hidden until there's data to analyze
   if (transactions.length === 0) {
     return null;
   }
@@ -69,7 +76,6 @@ export const AIInsights: React.FC<AIInsightsProps> = ({
     <div className={`transition-all duration-500 ease-in-out ${isUpdating ? 'opacity-50 scale-[0.99]' : 'opacity-100 scale-100'}`}>
       <div className="bg-white dark:bg-[#1e293b] rounded-[2.5rem] p-8 shadow-xl shadow-slate-200/40 dark:shadow-none border border-slate-100 dark:border-slate-800 overflow-hidden relative">
         
-        {/* Header with Risk Badge */}
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-3">
             <div className="bg-indigo-600 p-2.5 rounded-xl shadow-lg shadow-indigo-500/20">
@@ -91,7 +97,6 @@ export const AIInsights: React.FC<AIInsightsProps> = ({
         </div>
 
         <div className="space-y-6">
-          {/* Main Summary Section */}
           <div className="relative group">
             <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-2xl blur opacity-10 group-hover:opacity-20 transition duration-1000"></div>
             <div className="relative p-6 bg-slate-50 dark:bg-slate-900/40 rounded-2xl border border-slate-100 dark:border-slate-800">
@@ -108,7 +113,6 @@ export const AIInsights: React.FC<AIInsightsProps> = ({
             </div>
           </div>
 
-          {/* AI Tip Integration */}
           {aiTip && (
             <div className="p-5 bg-gradient-to-br from-indigo-600 via-indigo-600 to-violet-700 rounded-3xl text-white shadow-lg shadow-indigo-500/30 relative overflow-hidden">
               <div className="absolute top-0 right-0 p-4 opacity-10">
@@ -133,7 +137,6 @@ export const AIInsights: React.FC<AIInsightsProps> = ({
           )}
 
           <div className="grid grid-cols-1 gap-4">
-            {/* Warnings Section */}
             {insights.warnings.length > 0 && (
               <div className="space-y-3">
                 <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 px-1">
@@ -150,7 +153,6 @@ export const AIInsights: React.FC<AIInsightsProps> = ({
               </div>
             )}
 
-            {/* Recommendations Section */}
             {insights.recommendations.length > 0 && (
               <div className="space-y-3">
                 <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 px-1">

@@ -1,5 +1,8 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { onAuthStateChanged, User } from 'firebase/auth';
+import { auth } from './services/firebase';
 import { Header } from './components/Header';
 import { BalanceCard } from './components/BalanceCard';
 import { TransactionForm } from './components/TransactionForm';
@@ -9,18 +12,16 @@ import { BudgetStatus } from './components/BudgetStatus';
 import { CategoryBreakdown } from './components/CategoryBreakdown';
 import { MonthSelector } from './components/MonthSelector';
 import { EmptyState } from './components/EmptyState';
-import { AlertCircle } from 'lucide-react';
+import { FinancialHealth } from './components/FinancialHealth';
+import { AIInsights } from './components/AIInsights';
+import { Login } from './components/Login';
+import { Signup } from './components/Signup';
 import { Transaction, BudgetStats, AppStore, MonthData, AppState } from './types';
 import { saveToLocalStorage, loadFromLocalStorage } from './services/storage';
+import { Loader2 } from 'lucide-react';
 
-const App: React.FC = () => {
-  const [darkMode, setDarkMode] = useState<boolean>(() => {
-    const saved = localStorage.getItem('smart_budget_dark_mode');
-    return saved ? JSON.parse(saved) : true;
-  });
-
+const Dashboard: React.FC<{ darkMode: boolean; onToggleDarkMode: () => void }> = ({ darkMode, onToggleDarkMode }) => {
   const persistedState = useMemo(() => loadFromLocalStorage(), []);
-
   const [currentMonth, setCurrentMonth] = useState<string>(
     persistedState?.currentMonth || new Date().toISOString().slice(0, 7)
   );
@@ -37,23 +38,12 @@ const App: React.FC = () => {
     saveToLocalStorage(stateToPersist);
   }, [store, currentMonth]);
 
-  useEffect(() => {
-    localStorage.setItem('smart_budget_dark_mode', JSON.stringify(darkMode));
-    if (darkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [darkMode]);
-
   const activeData = useMemo<MonthData>(() => {
     return store[currentMonth] || { income: 0, budgetLimit: 0, transactions: [] };
   }, [store, currentMonth]);
 
-  // 1. MONTHLY TRANSACTIONS (Base for Totals & Charts)
   const monthlyTransactions = useMemo(() => activeData.transactions, [activeData.transactions]);
 
-  // 2. FILTERED TRANSACTIONS (For Display Timeline Only - respects Day Scroller)
   const filteredTransactions = useMemo(() => {
     let result = [...monthlyTransactions];
     if (selectedDay !== null) {
@@ -62,7 +52,6 @@ const App: React.FC = () => {
     return result;
   }, [monthlyTransactions, selectedDay]);
 
-  // 3. MONTHLY STATS (Always Monthly Balance)
   const monthlyStats = useMemo<BudgetStats>(() => {
     const income = monthlyTransactions
       .filter(t => t.type === 'income')
@@ -92,8 +81,7 @@ const App: React.FC = () => {
   const addTransaction = (transaction: Transaction) => {
     const now = new Date();
     const [year, month] = currentMonth.split('-').map(Number);
-    // Use selected day if active, otherwise use today's actual day
-    const dayToUse = selectedDay || (isActualCurrentMonth ? now.getDate() : 1);
+    const dayToUse = selectedDay || (new Date().toISOString().slice(0, 7) === currentMonth ? now.getDate() : 1);
     
     const transactionDate = new Date(year, month - 1, dayToUse, now.getHours(), now.getMinutes(), now.getSeconds());
     
@@ -106,13 +94,11 @@ const App: React.FC = () => {
     updateMonthData({ transactions: newTransactions });
   };
 
-  const isActualCurrentMonth = new Date().toISOString().slice(0, 7) === currentMonth;
-
   return (
     <div className="min-h-screen pb-20 bg-slate-50 dark:bg-[#0f172a] transition-colors duration-300 font-sans">
       <Header 
         darkMode={darkMode} 
-        onToggleDarkMode={() => setDarkMode(!darkMode)} 
+        onToggleDarkMode={onToggleDarkMode} 
       />
       
       <main className="max-w-2xl mx-auto px-4 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -123,8 +109,13 @@ const App: React.FC = () => {
           onDayChange={setSelectedDay}
         />
         
-        {/* TOTALS: Always uses monthlyStats */}
         <BalanceCard stats={monthlyStats} />
+
+        <FinancialHealth 
+          income={monthlyStats.totalIncome} 
+          expenses={monthlyStats.totalExpense} 
+          budgetLimit={monthlyStats.budgetLimit} 
+        />
 
         <BudgetStatus 
           expenses={monthlyStats.totalExpense} 
@@ -134,6 +125,12 @@ const App: React.FC = () => {
 
         {monthlyTransactions.length > 0 ? (
           <>
+            <AIInsights 
+              transactions={monthlyTransactions}
+              income={monthlyStats.totalIncome}
+              expenses={monthlyStats.totalExpense}
+              budgetLimit={monthlyStats.budgetLimit}
+            />
             <SpendingOverview stats={monthlyStats} />
             <CategoryBreakdown transactions={monthlyTransactions} />
           </>
@@ -162,7 +159,6 @@ const App: React.FC = () => {
             </span>
           </div>
           
-          {/* HISTORY: Only section affected by selectedDay scroller */}
           {filteredTransactions.length > 0 ? (
             <TransactionList 
               transactions={filteredTransactions} 
@@ -178,6 +174,52 @@ const App: React.FC = () => {
         </div>
       </main>
     </div>
+  );
+};
+
+const App: React.FC = () => {
+  const [darkMode, setDarkMode] = useState<boolean>(() => {
+    const saved = localStorage.getItem('smart_budget_dark_mode');
+    return saved ? JSON.parse(saved) : true;
+  });
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('smart_budget_dark_mode', JSON.stringify(darkMode));
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [darkMode]);
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-[#0f172a]">
+        <Loader2 className="w-10 h-10 text-indigo-600 animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <HashRouter>
+      <Routes>
+        <Route path="/" element={<Navigate to={user ? "/dashboard" : "/login"} replace />} />
+        <Route path="/login" element={user ? <Navigate to="/dashboard" replace /> : <Login />} />
+        <Route path="/signup" element={user ? <Navigate to="/dashboard" replace /> : <Signup />} />
+        <Route path="/dashboard" element={user ? <Dashboard darkMode={darkMode} onToggleDarkMode={() => setDarkMode(!darkMode)} /> : <Navigate to="/login" replace />} />
+        <Route path="*" element={<Navigate to={user ? "/dashboard" : "/login"} replace />} />
+      </Routes>
+    </HashRouter>
   );
 };
 
